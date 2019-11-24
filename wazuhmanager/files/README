@@ -1,0 +1,7 @@
+Files required
+
+elasticsearch-7.4.2-x86_64.rpm
+filebeat-7.4.2-x86_64.rpm
+kibana-7.4.2-x86_64.rpm
+wazuh-api-3.10.2-1.x86_64.rpm
+wazuh-manager-3.10.2-1.x86_64.rpm
