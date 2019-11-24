@@ -1,1 +1,138 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
 
+# All Vagrant configuration is done below. The "2" in Vagrant.configure
+# configures the configuration version (we support older styles for
+# backwards compatibility). Please don't change it unless you know what
+# you're doing.
+Vagrant.configure("2") do |config|
+  # The most common configuration options are documented and commented below.
+  # For a complete reference, please see the online documentation at
+  # https://docs.vagrantup.com.
+
+  # Every Vagrant development environment requires a box. You can search for
+  # boxes at https://vagrantcloud.com/search.
+  config.vm.box = "centos/7"
+
+  # Disable automatic box update checking. If you disable this, then
+  # boxes will only be checked for updates when the user runs
+  # `vagrant box outdated`. This is not recommended.
+  # config.vm.box_check_update = false
+
+  # Create a forwarded port mapping which allows access to a specific port
+  # within the machine from a port on the host machine. In the example below,
+  # accessing "localhost:8080" will access port 80 on the guest machine.
+  # NOTE: This will enable public access to the opened port
+  # config.vm.network "forwarded_port", guest: 80, host: 8080
+
+  # Create a forwarded port mapping which allows access to a specific port
+  # within the machine from a port on the host machine and only allow access
+  # via 127.0.0.1 to disable public access
+  # config.vm.network "forwarded_port", guest: 80, host: 8080, host_ip: "127.0.0.1"
+
+  # Create a private network, which allows host-only access to the machine
+  # using a specific IP.
+   config.vm.network "private_network", ip: "192.168.56.10"
+
+  # Create a public network, which generally matched to bridged network.
+  # Bridged networks make the machine appear as another physical device on
+  # your network.
+  # config.vm.network "public_network"
+
+  # Share an additional folder to the guest VM. The first argument is
+  # the path on the host to the actual folder. The second argument is
+  # the path on the guest to mount the folder. And the optional third
+  # argument is a set of non-required options.
+  # config.vm.synced_folder "../data", "/vagrant_data"
+
+  # Provider-specific configuration so you can fine-tune various
+  # backing providers for Vagrant. These expose provider-specific options.
+  # Example for VirtualBox:
+  #
+   config.vm.provider "virtualbox" do |vb|
+  #   # Display the VirtualBox GUI when booting the machine
+  #   vb.gui = true
+  #
+  #   # Customize the amount of memory on the VM:
+     vb.memory = "2048"
+   end
+  #
+  # View the documentation for the provider you are using for more
+  # information on available options.
+
+  # Enable provisioning with a shell script. Additional provisioners such as
+  # Puppet, Chef, Ansible, Salt, and Docker are also available. Please see the
+  # documentation for more information about their specific syntax and use.
+   config.vm.hostname = "wazuh-master"
+   config.vm.provision "file", source: "~/vagrant/wazuh/wazuhmanager/files", destination: "/tmp"
+   config.vm.provision "shell", inline: <<-SHELL
+      echo 'redhat'|passwd root --stdin
+       sed -i 's/ChallengeResponseAuthentication no/ChallengeResponseAuthentication yes/g' /etc/ssh/sshd_config
+       sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/g' /etc/ssh/sshd_config
+       systemctl restart sshd
+      rpm --import https://packages.wazuh.com/key/GPG-KEY-WAZUH
+       echo "[wazuh_repo]"> /etc/yum.repos.d/wazuh.repo 
+       echo "gpgcheck=1" >> /etc/yum.repos.d/wazuh.repo
+       echo "gpgkey=https://packages.wazuh.com/key/GPG-KEY-WAZUH" >>/etc/yum.repos.d/wazuh.repo
+       echo "enabled=1" >>/etc/yum.repos.d/wazuh.repo
+       echo "name=Wazuh repository" >> /etc/yum.repos.d/wazuh.repo
+       echo "baseurl=https://packages.wazuh.com/3.x/yum/" >> /etc/yum.repos.d/wazuh.repo
+        yum install /tmp/wazuh-manager* -y
+        sed -i 's/0.0.0.0/192.168.56.10/g' /var/ossec/etc/ossec.conf 
+        sed -i 's/NODE_IP/192.168.56.10/g' /var/ossec/etc/ossec.conf
+        systemctl restart wazuh-manager
+        systemctl status wazuh-manager
+        #yum install -y centos-release-scl
+        #yum install -y python27
+	curl --silent --location https://rpm.nodesource.com/setup_8.x | bash -
+	yum install nodejs -y
+	yum install /tmp/wazuh-api* -y
+	systemctl status wazuh-api
+	rpm --import https://packages.elastic.co/GPG-KEY-elasticsearch
+        echo "[elasticsearch-7.x]" > /etc/yum.repos.d/elastic.repo
+        echo "name=Elasticsearch repository for 7.x packages" >>/etc/yum.repos.d/elastic.repo
+        echo "baseurl=https://artifacts.elastic.co/packages/7.x/yum" >>/etc/yum.repos.d/elastic.repo
+        echo "gpgcheck=1" >> /etc/yum.repos.d/elastic.repo
+        echo "gpgkey=https://artifacts.elastic.co/GPG-KEY-elasticsearch" >>/etc/yum.repos.d/elastic.repo
+        echo "enabled=1" >> /etc/yum.repos.d/elastic.repo
+        echo "autorefresh=1" >>/etc/yum.repos.d/elastic.repo
+        echo "type=rpm-md" >> /etc/yum.repos.d/elastic.repo
+        yum install /tmp/filebeat* -y
+        curl -so /etc/filebeat/filebeat.yml https://raw.githubusercontent.com/wazuh/wazuh/v3.9.5/extensions/filebeat/7.x/filebeat.yml
+chmod go+r /etc/filebeat/filebeat.yml
+       curl -so /etc/filebeat/wazuh-template.json https://raw.githubusercontent.com/wazuh/wazuh/v3.9.5/extensions/elasticsearch/7.x/wazuh-template.json
+      chmod go+r /etc/filebeat/wazuh-template.json
+      curl -s https://packages.wazuh.com/3.x/filebeat/wazuh-filebeat-0.1.tar.gz | sudo tar -xvz -C /usr/share/filebeat/module
+      sed -i 's/YOUR_ELASTIC_SERVER_IP/192.168.56.10/g' /etc/filebeat/filebeat.yml
+      systemctl daemon-reload
+      systemctl enable filebeat.service
+      systemctl start filebeat.service
+      yum install /tmp/elasticsearch* -y
+      sed -i 's/#node.name: node-1/node.name: node-1/g' /etc/elasticsearch/elasticsearch.yml
+      sed -i 's/^#cluster.initial_master_nodes:/cluster.initial_master_nodes:/g' /etc/elasticsearch/elasticsearch.yml
+      sed -i 's/, "node-2"//g' /etc/elasticsearch/elasticsearch.yml
+      sed -i 's/^#network.host: 192.168.0.1/network.host: 192.168.56.10/g' /etc/elasticsearch/elasticsearch.yml
+      sed -i 's/^#http.port: 9200/http.port: 9200/g' /etc/elasticsearch/elasticsearch.yml
+      echo "192.168.56.10 wazuhmaster kibana node-1" >> /etc/hosts
+      echo "192.168.56.11 node-2 wazuhworker" >> /etc/hosts
+      echo "192.168.56.100 wazuhclient" >> /etc/hosts
+      systemctl daemon-reload
+      systemctl enable elasticsearch.service
+      systemctl start elasticsearch.service
+      filebeat setup --index-management -E setup.template.json.enabled=false
+      yum install /tmp/kibana* -y
+      sed -i 's/^#server.port: 5601/server.port: 5601/g'   /etc/kibana/kibana.yml
+      sed -i 's/^#server.name: "kibana"/server.name: "kibana"/g'   /etc/kibana/kibana.yml
+      sed -i 's/^#elasticsearch.username:/elasticsearch.username:/g'  /etc/kibana/kibana.yml
+      sed -i 's/^#elasticsearch.password:/elasticsearch.password:/g'  /etc/kibana/kibana.yml
+      sed -i 's/^#server.host: "localhost"/server.host: "kibana"/g'  /etc/kibana/kibana.yml
+      sed -i 's/localhost:9200/192.168.56.10:9200/g' /etc/kibana/kibana.yml
+      sed -i 's/#elasticsearch.hosts/elasticsearch.hosts/g' /etc/kibana/kibana.yml
+      sed -i 's/^#kibana.index/kibana.index/g' /etc/kibana/kibana.yml
+      sed -i 's/^#elasticsearch.pingTimeout/elasticsearch.pingTimeout/g' /etc/kibana/kibana.yml
+      sed -i 's/^#server.name: "your-hostname"/server.name: "kibana"/g' /etc/kibana/kibana.yml
+      systemctl daemon-reload
+      systemctl enable kibana.service
+      systemctl restart elasticsearch.service kibana
+   SHELL
+end
